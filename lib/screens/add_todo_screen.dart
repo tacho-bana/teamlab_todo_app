@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/todo.dart';
+import '../models/category.dart';
 import '../services/todo_service.dart';
+import 'category_management_screen.dart';
 
 class AddTodoScreen extends StatefulWidget {
   const AddTodoScreen({super.key, required this.todoService});
@@ -20,6 +22,8 @@ class AddTodoScreenState extends State<AddTodoScreen> {
       TextEditingController(); // 期日表示用
 
   DateTime? _selectedDate; // 選択された期日
+  Category? _selectedCategory; // 選択されたカテゴリー
+  List<Category> _categories = []; // カテゴリーリスト
 
   // フォームの入力検証用
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
@@ -33,6 +37,14 @@ class AddTodoScreenState extends State<AddTodoScreen> {
     _titleController.addListener(_updateFormValid);
     _detailController.addListener(_updateFormValid);
     _dateController.addListener(_updateFormValid);
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    final categories = await widget.todoService.categoryService.getCategories();
+    setState(() {
+      _categories = categories;
+    });
   }
 
   void _updateFormValid() {
@@ -124,6 +136,65 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
+
+              // カテゴリー選択
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<Category>(
+                      value: _selectedCategory,
+                      decoration: const InputDecoration(
+                        labelText: 'カテゴリー',
+                        border: OutlineInputBorder(),
+                      ),
+                      hint: const Text('カテゴリーを選択（任意）'),
+                      items: _categories.map((category) {
+                        return DropdownMenuItem<Category>(
+                          value: category,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: category.color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(category.name),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (Category? value) {
+                        setState(() {
+                          _selectedCategory = value;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CategoryManagementScreen(
+                            categoryService: widget.todoService.categoryService,
+                          ),
+                        ),
+                      );
+                      if (result == true) {
+                        _loadCategories(); // カテゴリーリストを再読み込み
+                      }
+                    },
+                    icon: const Icon(Icons.settings),
+                    tooltip: 'カテゴリー管理',
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
 
               // 作成ボタン
@@ -163,6 +234,7 @@ class AddTodoScreenState extends State<AddTodoScreen> {
         title: _titleController.text,
         detail: _detailController.text,
         dueDate: _selectedDate!,
+        category: _selectedCategory,
       );
 
       // 既存リストを取得して追加する処理を追加
