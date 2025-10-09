@@ -156,6 +156,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   );
                 }
                 return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 100), // 下部に余白を追加
                   itemCount: value.length,
                   itemBuilder: (context, index) {
                     final todo = value[index];

@@ -2,28 +2,47 @@ import 'package:flutter/material.dart';
 import '../services/todo_service.dart';
 import '../widgets/todo_list.dart';
 import '../widgets/completed_todo_list.dart';
-import 'add_todo_screen.dart';
 import 'calendar_screen.dart';
 
 class ListScreen extends StatefulWidget {
-  const ListScreen({super.key, required this.todoService});
+  const ListScreen({super.key, required this.todoService, this.onSettingsChanged, this.onPointsChanged});
 
   final TodoService todoService;
+  final VoidCallback? onSettingsChanged;
+  final VoidCallback? onPointsChanged;
 
   @override
   ListScreenState createState() => ListScreenState();
 }
 
-class ListScreenState extends State<ListScreen> with SingleTickerProviderStateMixin {
+class ListScreenState extends State<ListScreen>
+    with SingleTickerProviderStateMixin {
   // TodoList の状態を操作するためのキー
   Key _todoListKey = UniqueKey();
   Key _completedListKey = UniqueKey();
   late TabController _tabController;
+  int _currentPoints = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _loadPoints();
+  }
+
+  Future<void> _loadPoints() async {
+    final points = await widget.todoService.pointService.getPoints();
+    setState(() {
+      _currentPoints = points;
+    });
+  }
+
+  // TODO作成後のリスト更新用メソッド
+  void refreshTodoLists() {
+    setState(() {
+      _todoListKey = UniqueKey(); // 新しいキーで TodoList を再構築
+      _completedListKey = UniqueKey(); // 完了済みリストも再構築
+    });
   }
 
   @override
@@ -35,12 +54,13 @@ class ListScreenState extends State<ListScreen> with SingleTickerProviderStateMi
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent, // 透明にして親の背景を表示
       appBar: AppBar(
-        title: const Text('TODOリスト'),
+        toolbarHeight: 0, // タイトルエリアを非表示にして高さを調整
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: 'アクティブ', icon: Icon(Icons.list)),
+            Tab(text: 'TODO', icon: Icon(Icons.list)),
             Tab(text: '完了済み', icon: Icon(Icons.check)),
             Tab(text: 'カレンダー', icon: Icon(Icons.calendar_month)),
           ],
@@ -66,39 +86,13 @@ class ListScreenState extends State<ListScreen> with SingleTickerProviderStateMi
                 _todoListKey = UniqueKey(); // アクティブリストを更新
               });
             },
+            onPointsChanged: () {
+              _loadPoints(); // ポイント表示を更新
+              widget.onPointsChanged?.call(); // 親にも通知
+            },
           ),
           CalendarScreen(todoService: widget.todoService),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          // 画面遷移し、戻ってきたら結果（新規 Todo）を受け取る
-          final updated = await Navigator.push(
-            // Todoに追加があったらtrueを返す
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddTodoScreen(
-                todoService: widget.todoService, // 引数としてtodoServiceを渡す
-              ),
-            ),
-          );
-
-          // 追加があったら再描画（TodoList を再取得）
-          if (updated == true) {
-            setState(() {
-              _todoListKey = UniqueKey(); // 新しいキーで TodoList を再構築
-              _completedListKey = UniqueKey(); // 完了済みリストも再構築
-            });
-          }
-        },
-        backgroundColor: const Color.fromARGB(
-          255,
-          0,
-          0,
-          255,
-        ), // ボタンの背景色（RGBAでも指定できます）
-        foregroundColor: Colors.white, // アイコンやテキストなど、ボタン内の要素の色
-        child: const Icon(Icons.add), // Flutter標準の「＋」アイコン
       ),
     );
   }

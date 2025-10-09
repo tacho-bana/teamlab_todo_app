@@ -1,18 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // 日付フォーマット用パッケージ
+import 'package:flutter_svg/flutter_svg.dart';
 import '../models/todo.dart';
 
-class TodoCard extends StatelessWidget {
+class TodoCard extends StatefulWidget {
   final Todo todo; // 表示する Todo データ
   final VoidCallback? onToggle; // 完了トグル用コールバック（任意）
   final bool showCheckbox; // チェックボックス表示フラグ
-  final VoidCallback? onDelete; // 削除用コールバック（任意）
-  const TodoCard({super.key, required this.todo, this.onToggle, this.showCheckbox = true, this.onDelete});
+  final VoidCallback? onConvertToPoints; // ポイント変換用コールバック（任意）
+  final VoidCallback? onEdit; // 編集用コールバック（任意）
+  const TodoCard({
+    super.key,
+    required this.todo,
+    this.onToggle,
+    this.showCheckbox = true,
+    this.onConvertToPoints,
+    this.onEdit,
+  });
+
+  @override
+  State<TodoCard> createState() => _TodoCardState();
+}
+
+class _TodoCardState extends State<TodoCard> {
+  bool? _localCompletedState;
+
+  bool get _effectiveCompletedState => 
+      _localCompletedState ?? widget.todo.isCompleted;
+
+  void _handleToggle() {
+    if (widget.onToggle != null) {
+      setState(() {
+        _localCompletedState = !_effectiveCompletedState;
+      });
+      widget.onToggle!();
+      
+      // 一定時間後にローカル状態をクリア（アニメーション完了を待つ）
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          setState(() {
+            _localCompletedState = null;
+          });
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final cardColor = todo.category?.color ?? Colors.blue;
-    
+    final cardColor = widget.todo.category?.color ?? Colors.blue;
+
     return Card(
       color: cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -24,17 +61,17 @@ class TodoCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // ── 左端：チェックアイコン（タップでトグル）
-            if (showCheckbox) ...[
+            if (widget.showCheckbox) ...[
               IconButton(
                 iconSize: 24,
                 icon: Icon(
-                  todo.isCompleted
+                  _effectiveCompletedState
                       ? Icons
                             .check_circle // チェック済み
                       : Icons.radio_button_unchecked, // 未チェック
                   color: Colors.white,
                 ),
-                onPressed: onToggle,
+                onPressed: _handleToggle,
               ),
               const SizedBox(width: 8),
             ] else ...[
@@ -48,35 +85,44 @@ class TodoCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    todo.title,
-                    style: TextStyle(
+                    widget.todo.title,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
-                    todo.detail,
+                    widget.todo.detail,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
                   ),
                   Row(
                     children: [
                       Text(
-                        DateFormat('M月d日(E)', 'ja').format(todo.dueDate),
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                        DateFormat('M月d日(E)', 'ja').format(widget.todo.dueDate),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
                       ),
-                      if (todo.category != null) ...[
+                      if (widget.todo.category != null) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
-                            todo.category!.name,
+                            widget.todo.category!.name,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
@@ -90,14 +136,31 @@ class TodoCard extends StatelessWidget {
                 ],
               ),
             ),
-            // 削除ボタン（完了済みTODOの場合のみ表示）
-            if (onDelete != null) ...[
+            // 編集ボタン（アクティブTODOの場合のみ表示）
+            if (widget.onEdit != null) ...[
               const SizedBox(width: 8),
               IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete),
-                color: Colors.white,
+                onPressed: widget.onEdit,
+                icon: const Icon(
+                  Icons.edit,
+                  color: Colors.white,
+                ),
                 iconSize: 20,
+                tooltip: '編集',
+              ),
+            ],
+            // ポイント変換ボタン（完了済みTODOの場合のみ表示）
+            if (widget.onConvertToPoints != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: widget.onConvertToPoints,
+                icon: SvgPicture.asset(
+                  'assets/images/star_ch.svg',
+                  width: 40,
+                  height: 40,
+                ),
+                iconSize: 20,
+                tooltip: 'ポイントに変換',
               ),
             ],
           ],

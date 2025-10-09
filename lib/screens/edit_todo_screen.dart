@@ -1,48 +1,71 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/todo.dart';
 import '../models/category.dart';
 import '../services/todo_service.dart';
 import 'category_management_screen.dart';
 
-class AddTodoScreen extends StatefulWidget {
-  const AddTodoScreen({super.key, required this.todoService});
+class EditTodoScreen extends StatefulWidget {
+  const EditTodoScreen({super.key, required this.todoService, required this.todo});
 
   final TodoService todoService;
+  final Todo todo;
 
   @override
-  AddTodoScreenState createState() => AddTodoScreenState();
+  EditTodoScreenState createState() => EditTodoScreenState();
 }
 
-class AddTodoScreenState extends State<AddTodoScreen> {
+class EditTodoScreenState extends State<EditTodoScreen> {
   // 入力内容を管理するコントローラー
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _detailController = TextEditingController();
-  final TextEditingController _dateController =
-      TextEditingController(); // 期日表示用
+  final TextEditingController _dateController = TextEditingController();
 
-  DateTime? _selectedDate; // 選択された期日
-  Category? _selectedCategory; // 選択されたカテゴリー
-  List<Category> _categories = []; // カテゴリーリスト
+  DateTime? _selectedDate;
+  Category? _selectedCategory;
+  List<Category> _categories = [];
 
   // フォームの入力検証用
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  bool _isFormValid = false; // フォーム入力が完了しているか
+  bool _isFormValid = false;
 
   @override
   void initState() {
     super.initState();
-    // テキストと期日の入力が変わるたびにチェック
+    // 既存のTODOデータで初期化
+    _titleController.text = widget.todo.title;
+    _detailController.text = widget.todo.detail;
+    _selectedDate = widget.todo.dueDate;
+    _selectedCategory = widget.todo.category;
+    _dateController.text = DateFormat('yyyy年MM月dd日').format(widget.todo.dueDate);
+    
+    // リスナー設定
     _titleController.addListener(_updateFormValid);
     _dateController.addListener(_updateFormValid);
-    _loadCategories();
+    
+    // カテゴリーを読み込んでから初期状態チェック
+    _loadCategories().then((_) {
+      _updateFormValid();
+    });
   }
 
   Future<void> _loadCategories() async {
     final categories = await widget.todoService.categoryService.getCategories();
     setState(() {
       _categories = categories;
+      // 現在選択されているカテゴリーが読み込まれたカテゴリーリストに存在するかチェック
+      if (_selectedCategory != null) {
+        try {
+          _selectedCategory = categories.firstWhere(
+            (cat) => cat.id == _selectedCategory!.id,
+          );
+        } catch (e) {
+          // カテゴリーが見つからない場合はnullに設定
+          _selectedCategory = null;
+        }
+      }
     });
   }
 
@@ -57,11 +80,10 @@ class AddTodoScreenState extends State<AddTodoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('新しいタスクを追加')),
+      appBar: AppBar(title: const Text('タスクを編集')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
-          // 入力フォームの枠組み
           key: _formKey,
           child: Column(
             children: [
@@ -74,7 +96,6 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  // 入力チェック
                   if (value == null || value.isEmpty) {
                     return 'タイトルを入力してください';
                   }
@@ -82,7 +103,7 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                 },
               ),
 
-              const SizedBox(height: 16), // 余白
+              const SizedBox(height: 16),
               // 詳細入力フィールド
               TextFormField(
                 controller: _detailController,
@@ -91,47 +112,47 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                   hintText: '詳細情報があれば入力してください',
                   border: OutlineInputBorder(),
                 ),
-                maxLines: 3, // 複数行入力可能
+                maxLines: 3,
                 validator: (value) {
-                  // 詳細は任意なので、空でもOK
                   return null;
                 },
               ),
 
               const SizedBox(height: 16),
 
-              // 📅 期日入力フィールド（DatePicker）
+              // 期日入力フィールド
               TextFormField(
                 controller: _dateController,
-                readOnly: true, // キーボードを表示しない
                 decoration: const InputDecoration(
                   labelText: '期日',
-                  hintText: '年/月/日',
+                  hintText: '期日を選択してください',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.calendar_today),
                 ),
+                readOnly: true,
                 onTap: () async {
-                  // 日付選択ダイアログ
-                  DateTime? picked = await showDatePicker(
+                  final DateTime? picked = await showDatePicker(
                     context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime.now(),
+                    initialDate: _selectedDate ?? DateTime.now(),
+                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
                     lastDate: DateTime(2100),
                   );
-                  if (picked != null) {
+                  if (picked != null && picked != _selectedDate) {
                     setState(() {
                       _selectedDate = picked;
-                      _dateController.text =
-                          '${picked.year}/${picked.month}/${picked.day}';
+                      _dateController.text = DateFormat('yyyy年MM月dd日').format(picked);
                     });
+                    _updateFormValid();
                   }
                 },
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
+                  if (_selectedDate == null) {
                     return '期日を選択してください';
                   }
                   return null;
                 },
               ),
+
               const SizedBox(height: 16),
 
               // カテゴリー選択
@@ -141,18 +162,18 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                     child: DropdownButtonFormField<Category>(
                       value: _selectedCategory,
                       decoration: const InputDecoration(
-                        labelText: 'カテゴリー',
+                        labelText: 'カテゴリー（任意）',
                         border: OutlineInputBorder(),
                       ),
-                      hint: const Text('カテゴリーを選択（任意）'),
+                      hint: const Text('カテゴリーを選択'),
                       items: _categories.map((category) {
                         return DropdownMenuItem<Category>(
                           value: category,
                           child: Row(
                             children: [
                               Container(
-                                width: 20,
-                                height: 20,
+                                width: 16,
+                                height: 16,
                                 decoration: BoxDecoration(
                                   color: category.color,
                                   shape: BoxShape.circle,
@@ -164,9 +185,9 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                           ),
                         );
                       }).toList(),
-                      onChanged: (Category? value) {
+                      onChanged: (Category? newCategory) {
                         setState(() {
-                          _selectedCategory = value;
+                          _selectedCategory = newCategory;
                         });
                       },
                     ),
@@ -183,7 +204,7 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                         ),
                       );
                       if (result == true) {
-                        _loadCategories(); // カテゴリーリストを再読み込み
+                        _loadCategories();
                       }
                     },
                     icon: const Icon(Icons.settings),
@@ -191,9 +212,10 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
 
-              // 作成ボタン
+              const SizedBox(height: 32),
+
+              // 保存ボタン
               ElevatedButton(
                 onPressed: _isFormValid ? _saveTodo : null,
                 style: ElevatedButton.styleFrom(
@@ -204,10 +226,9 @@ class AddTodoScreenState extends State<AddTodoScreen> {
                     horizontal: 32,
                     vertical: 12,
                   ),
-                ), // 入力完了で活性化
+                ),
                 child: Text(
-                  'タスクを追加',
-                  // テキストの色を変更
+                  '変更を保存',
                   style: TextStyle(
                     color: _isFormValid ? Colors.white : Colors.grey,
                     fontSize: 18,
@@ -221,44 +242,32 @@ class AddTodoScreenState extends State<AddTodoScreen> {
     );
   }
 
-  // タスク作成処理
+  // タスク編集処理
   void _saveTodo() async {
     if (_formKey.currentState!.validate()) {
-      // 入力チェック
-      // 新しいTodoを作成
-      Todo newTodo = Todo(
+      // 編集されたTodoを作成
+      Todo editedTodo = Todo(
         title: _titleController.text,
         detail: _detailController.text.isEmpty ? '' : _detailController.text,
         dueDate: _selectedDate!,
         category: _selectedCategory,
       );
 
-      // 既存リストを取得して追加する処理を追加
-      final todos = await widget.todoService.getTodos();
-      todos.add(newTodo);
-      await widget.todoService.saveTodos(todos);
+      // TODOを更新
+      await widget.todoService.editTodo(widget.todo, editedTodo);
 
-      // この画面がまだ非表示にならずに残ってるか確認
       if (!mounted) return;
 
-      // 前の画面へ「更新したよ」とだけ知らせる
+      // 前の画面へ「更新したよ」と知らせる
       Navigator.pop(context, true);
     }
   }
 
   @override
   void dispose() {
-    // 画面が閉じられる時の処理
-    _titleController.dispose(); // メモリの解放
+    _titleController.dispose();
     _detailController.dispose();
     _dateController.dispose();
     super.dispose();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 初期表示時にもバリデーション
-    _updateFormValid();
   }
 }

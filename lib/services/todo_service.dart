@@ -3,14 +3,18 @@ import 'package:shared_preferences/shared_preferences.dart'; // データ保存�
 import '../models/todo.dart'; // 作成したTodoクラスを使用
 import '../models/category.dart';
 import 'category_service.dart';
+import 'point_service.dart';
 
 class TodoService {
   static const String _storageKey = 'todos'; // 保存時のキー名
   static const String _completedStorageKey = 'completed_todos'; // 完了済みTODOの保存キー
   final SharedPreferences _prefs; // データ保存の仕組み
   final CategoryService _categoryService; // カテゴリーサービス
+  final PointService _pointService; // ポイントサービス
 
-  TodoService(this._prefs) : _categoryService = CategoryService(_prefs);
+  TodoService(this._prefs) 
+    : _categoryService = CategoryService(_prefs),
+      _pointService = PointService(_prefs);
 
   // 保存されているTODOリストを読み込む（非同期処理）
   Future<List<Todo>> getTodos() async {
@@ -71,6 +75,25 @@ class TodoService {
     final completedTodos = await getCompletedTodos();
     completedTodos.removeWhere((t) => t.id == todo.id);
     await saveCompletedTodos(completedTodos);
+  }
+
+  // TODOを編集する
+  Future<void> editTodo(Todo oldTodo, Todo newTodo) async {
+    final todos = await getTodos();
+    final index = todos.indexWhere((t) => t.id == oldTodo.id);
+    if (index != -1) {
+      // 新しいTodoを元のIDで作成
+      todos[index] = Todo(
+        id: oldTodo.id,
+        title: newTodo.title,
+        detail: newTodo.detail,
+        dueDate: newTodo.dueDate,
+        isCompleted: newTodo.isCompleted,
+        completedDate: newTodo.completedDate,
+        category: newTodo.category,
+      );
+      await saveTodos(todos);
+    }
   }
 
   // 共通の読み込みメソッド
@@ -150,6 +173,34 @@ class TodoService {
     }).length;
   }
 
+  // 完了済みTODOをポイントに変換して削除
+  Future<int> convertCompletedTodoToPoints(Todo todo) async {
+    final points = await _pointService.convertTodoToPoints();
+    await deleteCompletedTodo(todo);
+    return points;
+  }
+
+  // すべての完了済みTODOをポイントに変換して削除
+  Future<int> convertAllCompletedTodosToPoints() async {
+    final completedTodos = await getCompletedTodos();
+    final totalPoints = completedTodos.length;
+    
+    for (int i = 0; i < totalPoints; i++) {
+      await _pointService.convertTodoToPoints();
+    }
+    
+    // すべての完了済みTODOを削除
+    await saveCompletedTodos([]);
+    
+    return totalPoints;
+  }
+
   // CategoryServiceを取得するメソッド
   CategoryService get categoryService => _categoryService;
+  
+  // PointServiceを取得するメソッド
+  PointService get pointService => _pointService;
+  
+  // SharedPreferencesを取得するメソッド
+  SharedPreferences get prefs => _prefs;
 }

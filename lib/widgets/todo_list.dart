@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/todo.dart'; // 作成したTodoクラス
 import '../services/todo_service.dart'; // データ保存サービス
 import '../widgets/todo_card.dart'; // 作成したTodoCardウィジェット
+import '../screens/edit_todo_screen.dart'; // 編集画面
 
 class TodoList extends StatefulWidget {
   const TodoList({super.key, required this.todoService, this.onTodoCompleted});
@@ -15,9 +16,13 @@ class TodoList extends StatefulWidget {
   State<TodoList> createState() => TodoListState();
 }
 
-class TodoListState extends State<TodoList> {
+class TodoListState extends State<TodoList> with TickerProviderStateMixin {
   List<Todo> _todos = [];
   bool _isLoading = true;
+  final Map<String, AnimationController> _completionAnimations = {};
+  final Map<String, Animation<double>> _scaleAnimations = {};
+  final Map<String, Animation<double>> _fadeAnimations = {};
+  final Set<String> _completingTodos = {};
 
   @override
   void initState() {
@@ -46,9 +51,70 @@ class TodoListState extends State<TodoList> {
 
   // チェックボタンから呼ばれる（完了済みに移動）
   Future<void> _completeTodo(Todo todo) async {
+    if (_completingTodos.contains(todo.id)) return; // 既にアニメーション中の場合は無視
+    
+    setState(() {
+      _completingTodos.add(todo.id);
+    });
+
+    // アニメーションコントローラーを作成
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    
+    final scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.95,
+    ).animate(CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeOut,
+    ));
+    
+    final fadeAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeOut,
+    ));
+
+    _completionAnimations[todo.id] = controller;
+    _scaleAnimations[todo.id] = scaleAnimation;
+    _fadeAnimations[todo.id] = fadeAnimation;
+
+    // アニメーション開始
+    await controller.forward();
+    
+    // アニメーション完了後にTODOを移動
     await widget.todoService.moveToCompleted(todo);
+    
+    // クリーンアップ
+    controller.dispose();
+    _completionAnimations.remove(todo.id);
+    _scaleAnimations.remove(todo.id);
+    _fadeAnimations.remove(todo.id);
+    _completingTodos.remove(todo.id);
+    
     _loadTodos(); // リストを再読み込み
     widget.onTodoCompleted?.call(); // 親画面に完了を通知
+  }
+
+  // 編集ボタンから呼ばれる
+  Future<void> _editTodo(Todo todo) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditTodoScreen(
+          todoService: widget.todoService,
+          todo: todo,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _loadTodos(); // リストを再読み込み
+    }
   }
 
   // 日付ヘッダーウィジェット
@@ -135,6 +201,7 @@ class TodoListState extends State<TodoList> {
     final sortedDates = groupedTodos.keys.toList()..sort();
 
     return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 100), // 下部に余白を追加
       itemCount: sortedDates.length * 2, // ヘッダーとコンテンツで2倍
       itemBuilder: (context, index) {
         if (index.isOdd) {
@@ -145,12 +212,40 @@ class TodoListState extends State<TodoList> {
           
           return Column(
             children: todosForDate.map((todo) {
-              return Padding(
+              final isCompleting = _completingTodos.contains(todo.id);
+              final scaleAnimation = _scaleAnimations[todo.id];
+              final fadeAnimation = _fadeAnimations[todo.id];
+              
+              Widget todoCard = Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: TodoCard(
                   todo: todo,
                   onToggle: () => _completeTodo(todo), // チェックで完了済みに移動
+                  onEdit: () => _editTodo(todo), // 編集ボタンで編集画面へ
                 ),
+              );
+
+              // アニメーション中の場合はAnimatedBuilderでラップ
+              if (isCompleting && scaleAnimation != null && fadeAnimation != null) {
+                todoCard = AnimatedBuilder(
+                  animation: _completionAnimations[todo.id]!,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: scaleAnimation.value,
+                      child: Opacity(
+                        opacity: fadeAnimation.value,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: todoCard,
+                );
+              }
+
+              return AnimatedSize(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+                child: todoCard,
               );
             }).toList(),
           );
@@ -162,5 +257,18 @@ class TodoListState extends State<TodoList> {
         }
       },
     );
+  }
+
+  @override
+  void dispose() {
+    // すべてのアニメーションコントローラーを破棄
+    for (final controller in _completionAnimations.values) {
+      controller.dispose();
+    }
+    _completionAnimations.clear();
+    _scaleAnimations.clear();
+    _fadeAnimations.clear();
+    _completingTodos.clear();
+    super.dispose();
   }
 }
